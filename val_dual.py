@@ -271,7 +271,9 @@ def run(
 
     # Print results per class
     if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
+        print("verbose on")
         for i, c in enumerate(ap_class):
+            print("success verbose", i)
             LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
 
     # Print speeds
