@@ -259,8 +259,16 @@ def run(
     stats = [torch.cat(x, 0).cpu().numpy() for x in zip(*stats)]  # to numpy
     if len(stats) and stats[0].any():
         tp, fp, p, r, f1, ap, ap_class = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
+        print("ap:", ap)
+        print("ap_class:", ap_class)
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
+        print("ap50:", ap50)
+        print("ap (mean(1)):", ap)
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
+        print("mp:", mp)
+        print("mr:", mr)
+        print("map50:", map50)
+        print("map:", map)
     nt = np.bincount(stats[3].astype(int), minlength=nc)  # number of targets per class
 
     # Print results
@@ -271,9 +279,7 @@ def run(
 
     # Print results per class
     if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
-        print("verbose on")
         for i, c in enumerate(ap_class):
-            print("success verbose", i)
             LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
 
     # Print speeds
