@@ -267,6 +267,7 @@ def run(
         print("mp:", mp)
         print("mr:", mr)
         print("f1:", f1)
+        print("mf1:", sum(f1)/len(f1))
         print("map50:", map50)
         print("map:", map)
     nt = np.bincount(stats[3].astype(int), minlength=nc)  # number of targets per class
