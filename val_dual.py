@@ -259,17 +259,9 @@ def run(
     stats = [torch.cat(x, 0).cpu().numpy() for x in zip(*stats)]  # to numpy
     if len(stats) and stats[0].any():
         tp, fp, p, r, f1, ap, ap_class = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
-        print("ap:", ap)
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
-        print("ap50:", ap50)
-        print("ap per class:", ap)
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
-        print("mp:", mp)
-        print("mr:", mr)
-        print("f1:", f1)
-        print("mf1:", sum(f1)/len(f1))
-        print("map50:", map50)
-        print("map:", map)
+        
     nt = np.bincount(stats[3].astype(int), minlength=nc)  # number of targets per class
 
     # Print results
@@ -288,6 +280,16 @@ def run(
     if not training:
         shape = (batch_size, 3, imgsz, imgsz)
         LOGGER.info(f'Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS per image at shape {shape}' % t)
+        # avg_prec = ap
+        # print("average precision:", avg_prec)
+        print("mp               :", mp)
+        print("mr               :", mr)
+        print("f1               :", f1)
+        print("mf1              :", sum(f1)/len(f1))
+        print("ap50 per class   :", ap50)
+        print("map50            :", map50)
+        print("ap50-95 per class:", ap)
+        print("map50-95         :", map)
 
     # Plots
     if plots:
