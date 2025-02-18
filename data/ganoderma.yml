@@ -1,0 +1,7 @@
+path: ../Ganoderma-3-8
+train: Ganoderma-3-8/train/images
+val: Ganoderma-3-8/valid/images
+test: Ganoderma-3-8/test/images
+
+nc: 2
+names: ['ganoderma', 'primordium']
