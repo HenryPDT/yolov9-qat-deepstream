@@ -282,9 +282,11 @@ def run(
         LOGGER.info(f'Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS per image at shape {shape}' % t)
         # avg_prec = ap
         # print("average precision:", avg_prec)
+        print("p                :", p)
+        print("r                :", r)
+        print("f1               :", f1)
         print("mp               :", mp)
         print("mr               :", mr)
-        print("f1               :", f1)
         print("mf1              :", sum(f1)/len(f1))
         print("ap50 per class   :", ap50)
         print("map50            :", map50)
