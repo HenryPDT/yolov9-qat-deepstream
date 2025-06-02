@@ -46,6 +46,7 @@ def export_formats():
         ['TorchScript', 'torchscript', '.torchscript', True, True],
         ['ONNX', 'onnx', '.onnx', True, True],
         ['ONNX END2END', 'onnx_end2end', '_end2end.onnx', True, True],
+        ['DeepStream ONNX', 'deepstream', '_deepstream.onnx', True, True],
         ['OpenVINO', 'openvino', '_openvino_model', True, False],
         ['TensorRT', 'engine', '.engine', False, True],
         ['CoreML', 'coreml', '.mlmodel', True, False],
@@ -619,6 +620,137 @@ def add_tflite_metadata(file, metadata, num_outputs):
         tmp_file.unlink()
 
 
+@try_export
+def export_deepstream_onnx(model, im, file, opset=17, dynamic=False, simplify=False, prefix=colorstr('DeepStream ONNX:')):
+    # YOLO DeepStream ONNX export with QAT support
+    check_requirements('onnx')
+    import onnx
+
+    # DeepStream output layers
+    class DeepStreamOutputDual(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+
+        def forward(self, x):
+            x = x[1].transpose(1, 2)
+            boxes = x[:, :, :4]
+            scores, labels = torch.max(x[:, :, 4:], dim=-1, keepdim=True)
+            return torch.cat([boxes, scores, labels.to(boxes.dtype)], dim=-1)
+
+    class DeepStreamOutput(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+
+        def forward(self, x):
+            x = x.transpose(1, 2)
+            boxes = x[:, :, :4]
+            scores, labels = torch.max(x[:, :, 4:], dim=-1, keepdim=True)
+            return torch.cat([boxes, scores, labels.to(boxes.dtype)], dim=-1)
+
+    # Check if model is QAT
+    is_model_qat = False
+    for i in range(0, len(model.model)):
+        layer = model.model[i]
+        if quantize.have_quantizer(layer):
+            is_model_qat = True
+            break
+
+    LOGGER.info(f'\n{prefix} starting export with onnx {onnx.__version__}...')
+    
+    # Determine head type
+    head = 'Detect'
+    for k, m in model.named_modules():
+        if m.__class__.__name__ in ('Detect', 'DDetect', 'DualDetect', 'DualDDetect'):
+            head = m.__class__.__name__
+            break
+
+    # Add DeepStream output layer based on head type
+    if head in ('Detect', 'DDetect'):
+        model = torch.nn.Sequential(model, DeepStreamOutput())
+    else:
+        model = torch.nn.Sequential(model, DeepStreamOutputDual())
+
+    f = str(file).replace('.pt', '_deepstream.onnx')
+
+    # Dynamic axes configuration
+    dynamic_axes = {
+        'input': {0: 'batch'},
+        'output': {0: 'batch'}
+    } if dynamic else None
+
+    if is_model_qat:
+        warnings.filterwarnings("ignore")
+        LOGGER.info(f'{prefix} Model QAT Detected ...')
+        quant_nn.TensorQuantizer.use_fb_fake_quant = True
+        model.eval()
+        quantize.initialize()
+        
+        with torch.no_grad():
+            torch.onnx.export(
+                model,
+                im,
+                f,
+                verbose=False,
+                opset_version=opset,
+                do_constant_folding=True,
+                input_names=['input'],
+                output_names=['output'],
+                dynamic_axes=dynamic_axes
+            )
+        quant_nn.TensorQuantizer.use_fb_fake_quant = False
+    else:
+        torch.onnx.export(
+            model.cpu() if dynamic else model,
+            im.cpu() if dynamic else im,
+            f,
+            verbose=False,
+            opset_version=opset,
+            do_constant_folding=True,
+            input_names=['input'],
+            output_names=['output'],
+            dynamic_axes=dynamic_axes
+        )
+
+    # Checks
+    model_onnx = onnx.load(f)
+    onnx.checker.check_model(model_onnx)
+
+    # Metadata
+    d = {'stride': int(max(model.stride)), 'names': model.names, 'format': 'DeepStream'}
+    for k, v in d.items():
+        meta = model_onnx.metadata_props.add()
+        meta.key, meta.value = k, str(v)
+
+    # Simplify
+    if simplify:
+        try:
+            # Try onnxslim first (newer, faster)
+            try:
+                import onnxslim
+                LOGGER.info(f'{prefix} simplifying with onnxslim...')
+                model_onnx = onnxslim.slim(model_onnx)
+                onnx.save(model_onnx, f)
+            except ImportError:
+                # Fallback to onnxsim
+                cuda = torch.cuda.is_available()
+                check_requirements(('onnxruntime-gpu' if cuda else 'onnxruntime', 'onnx-simplifier>=0.4.1'))
+                import onnxsim
+                LOGGER.info(f'{prefix} simplifying with onnx-simplifier {onnxsim.__version__}...')
+                model_onnx, check = onnxsim.simplify(model_onnx)
+                assert check, 'assert check failed'
+                onnx.save(model_onnx, f)
+        except Exception as e:
+            LOGGER.info(f'{prefix} simplifier failure: {e}')
+
+    # Apply QDQ removal for QAT models
+    if is_model_qat:
+        LOGGER.info(f'{prefix} Removing redundant Q/DQ layer with onnx_graphsurgeon {gs.__version__}...')
+        remove_redundant_qdq_model(model_onnx, f)
+        model_onnx = onnx.load(f)
+
+    return f, model_onnx
+
+
 @smart_inference_mode()
 def run(
         data=ROOT / 'data/coco.yaml',  # 'dataset.yaml path'
@@ -653,7 +785,7 @@ def run(
     fmts = tuple(export_formats()['Argument'][1:])  # --include arguments
     flags = [x in include for x in fmts]
     assert sum(flags) == len(include), f'ERROR: Invalid --include {include}, valid --include arguments are {fmts}'
-    jit, onnx, onnx_end2end, xml, engine, coreml, saved_model, pb, tflite, edgetpu, tfjs, paddle = flags  # export booleans
+    jit, onnx, onnx_end2end, deepstream, xml, engine, coreml, saved_model, pb, tflite, edgetpu, tfjs, paddle = flags  # export booleans
     file = Path(url2file(weights) if str(weights).startswith(('http:/', 'https:/')) else weights)  # PyTorch weights
 
     # Load PyTorch model
@@ -700,15 +832,17 @@ def run(
         f[2], _ = export_onnx(model, im, file, opset, dynamic, simplify)
     if onnx_end2end:
         labels = model.names
-        f[2], _ = export_onnx_end2end(model, im, file, class_agnostic, simplify, topk_all, iou_thres, conf_thres, device, len(labels), mask_resolution, pooler_scale, sampling_ratio )
+        f[3], _ = export_onnx_end2end(model, im, file, class_agnostic, simplify, topk_all, iou_thres, conf_thres, device, len(labels), mask_resolution, pooler_scale, sampling_ratio )
+    if deepstream:  # DeepStream ONNX
+        f[4], _ = export_deepstream_onnx(model, im, file, opset, dynamic, simplify)
     if xml:  # OpenVINO
-        f[3], _ = export_openvino(file, metadata, half)
+        f[5], _ = export_openvino(file, metadata, half)
     if coreml:  # CoreML
-        f[4], _ = export_coreml(model, im, file, int8, half)
+        f[6], _ = export_coreml(model, im, file, int8, half)
     if any((saved_model, pb, tflite, edgetpu, tfjs)):  # TensorFlow formats
         assert not tflite or not tfjs, 'TFLite and TF.js models must be exported separately, please pass only one type.'
         assert not isinstance(model, ClassificationModel), 'ClassificationModel export to TF formats not yet supported.'
-        f[5], s_model = export_saved_model(model.cpu(),
+        f[7], s_model = export_saved_model(model.cpu(),
                                            im,
                                            file,
                                            dynamic,
@@ -720,16 +854,16 @@ def run(
                                            conf_thres=conf_thres,
                                            keras=keras)
         if pb or tfjs:  # pb prerequisite to tfjs
-            f[6], _ = export_pb(s_model, file)
+            f[8], _ = export_pb(s_model, file)
         if tflite or edgetpu:
-            f[7], _ = export_tflite(s_model, im, file, int8 or edgetpu, data=data, nms=nms, agnostic_nms=agnostic_nms)
+            f[9], _ = export_tflite(s_model, im, file, int8 or edgetpu, data=data, nms=nms, agnostic_nms=agnostic_nms)
             if edgetpu:
-                f[8], _ = export_edgetpu(file)
-            add_tflite_metadata(f[8] or f[7], metadata, num_outputs=len(s_model.outputs))
+                f[10], _ = export_edgetpu(file)
+            add_tflite_metadata(f[10] or f[9], metadata, num_outputs=len(s_model.outputs))
         if tfjs:
-            f[9], _ = export_tfjs(file)
+            f[11], _ = export_tfjs(file)
     if paddle:  # PaddlePaddle
-        f[10], _ = export_paddle(model, im, file, metadata)
+        f[12], _ = export_paddle(model, im, file, metadata)
 
     # Finish
     f = [str(x) for x in f if x]  # filter out '' and None
@@ -784,7 +918,7 @@ def parse_opt():
         '--include',
         nargs='+',
         default=['torchscript'],
-        help='torchscript, onnx, onnx_end2end, openvino, engine, coreml, saved_model, pb, tflite, edgetpu, tfjs, paddle')
+        help='torchscript, onnx, onnx_end2end, deepstream, openvino, engine, coreml, saved_model, pb, tflite, edgetpu, tfjs, paddle')
     opt = parser.parse_args()
 
     if 'onnx_end2end' in opt.include:  
