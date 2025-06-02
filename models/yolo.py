@@ -488,8 +488,10 @@ class DualDSegment(DualDDetect):
         d = self.detect(self, x[:-2])
         if self.training:
             return d, mc, p
-        return (torch.cat([d[0][1], mc[1]], 1), (d[1][1], mc[1], p[1]))
-
+        if self.export:
+            return (torch.cat([d[1], mc[1]], 1), p[1])
+        else:
+            return (torch.cat([d[0][1], mc[1]], 1), (d[1][1], mc[1], p[1]))
 
 class Panoptic(Detect):
     # YOLO Panoptic head for panoptic segmentation models
