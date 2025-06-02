@@ -310,7 +310,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                     imgs = nn.functional.interpolate(imgs, size=ns, mode='bilinear', align_corners=False)
 
             # Forward
-            with torch.amp.autocast('cuda'):
+            with torch.amp.autocast(device_type='cuda', dtype=torch.float16 if amp else torch.float32):
                 pred = model(imgs)  # forward
                 loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
                 if RANK != -1:
@@ -496,14 +496,14 @@ def main(opt, callbacks=Callbacks()):
 
     # Resume (from specified or most recent last.pt)
     if opt.resume and not check_comet_resume(opt) and not opt.evolve:
-        last = Path(check_file(opt.resume) if isinstance(opt.resume, str) else get_latest_run())
+        last = Path(check_file(opt.resume) if isinstance(opt.resume, str) else get_latest_run(f"./runs/train/{opt.name}"))
         opt_yaml = last.parent.parent / 'opt.yaml'  # train options yaml
         opt_data = opt.data  # original dataset
         if opt_yaml.is_file():
             with open(opt_yaml, errors='ignore') as f:
                 d = yaml.safe_load(f)
         else:
-            d = torch.load(last, map_location='cpu')['opt']
+            d = torch.load(last, map_location='cpu', weights_only=False)['opt']
         opt = argparse.Namespace(**d)  # replace
         opt.cfg, opt.weights, opt.resume = '', str(last), True  # reinstate
         if is_url(opt_data):
