@@ -2,8 +2,18 @@ import os
 import onnx
 import torch
 import torch.nn as nn
+import warnings
 
 import utils.tal.anchor_generator as _m
+
+# QAT support imports
+try:
+    import models.quantize as quantize
+    from pytorch_quantization import nn as quant_nn
+    QAT_AVAILABLE = True
+except ImportError:
+    QAT_AVAILABLE = False
+    print("Warning: QAT modules not available. Only standard models supported.")
 
 
 def _dist2bbox(distance, anchor_points, xywh=False, dim=-1):
@@ -36,6 +46,21 @@ class DeepStreamOutput(nn.Module):
         boxes = x[:, :, :4]
         scores, labels = torch.max(x[:, :, 4:], dim=-1, keepdim=True)
         return torch.cat([boxes, scores, labels.to(boxes.dtype)], dim=-1)
+
+
+def detect_qat_model(model):
+    """Detect if model is QAT (Quantization Aware Training)"""
+    if not QAT_AVAILABLE:
+        return False
+    
+    try:
+        for i in range(0, len(model.model)):
+            layer = model.model[i]
+            if quantize.have_quantizer(layer):
+                return True
+    except:
+        pass
+    return False
 
 
 def yolov9_export(weights, device, inplace=True, fuse=True):
@@ -72,15 +97,59 @@ def suppress_warnings():
     warnings.filterwarnings('ignore', category=ResourceWarning)
 
 
+def export_onnx_with_qat_support(model, input_tensor, output_file, opset_version, dynamic_axes, is_qat):
+    """Export ONNX with QAT support if needed"""
+    if is_qat and QAT_AVAILABLE:
+        print('QAT Model Detected - Using quantization-aware export')
+        warnings.filterwarnings("ignore")
+        quant_nn.TensorQuantizer.use_fb_fake_quant = True
+        model.eval()
+        quantize.initialize()
+        quantize.replace_custom_module_forward(model)
+        
+        with torch.no_grad():
+            torch.onnx.export(
+                model, 
+                input_tensor, 
+                output_file, 
+                verbose=False, 
+                opset_version=opset_version, 
+                do_constant_folding=True,
+                input_names=['input'], 
+                output_names=['output'], 
+                dynamic_axes=dynamic_axes
+            )
+        quant_nn.TensorQuantizer.use_fb_fake_quant = False
+    else:
+        print('Standard Model - Using regular export')
+        torch.onnx.export(
+            model, 
+            input_tensor, 
+            output_file, 
+            verbose=False, 
+            opset_version=opset_version, 
+            do_constant_folding=True,
+            input_names=['input'], 
+            output_names=['output'], 
+            dynamic_axes=dynamic_axes
+        )
+
+
 def main(args):
     suppress_warnings()
 
     print(f'\nStarting: {args.weights}')
-
     print('Opening YOLOv9 model')
 
     device = torch.device('cpu')
     model, head = yolov9_export(args.weights, device)
+
+    # Check if model is QAT
+    is_qat = detect_qat_model(model)
+    if is_qat:
+        print('✅ QAT Model Detected')
+    else:
+        print('📝 Standard Model (Non-QAT)')
 
     if len(model.names.keys()) > 0:
         print('Creating labels.txt file')
@@ -88,29 +157,29 @@ def main(args):
             for name in model.names.values():
                 f.write(f'{name}\n')
 
+    # Add DeepStream output layer
     if head in ('Detect', 'DDetect'):
         model = nn.Sequential(model, DeepStreamOutput())
     else:
         model = nn.Sequential(model, DeepStreamOutputDual())
 
     img_size = args.size * 2 if len(args.size) == 1 else args.size
-
     onnx_input_im = torch.zeros(args.batch, 3, *img_size).to(device)
     onnx_output_file = f'{args.weights}.onnx'
 
     dynamic_axes = {
-        'input': {
-            0: 'batch'
-        },
-        'output': {
-            0: 'batch'
-        }
-    }
+        'input': {0: 'batch'},
+        'output': {0: 'batch'}
+    } if args.dynamic else None
 
     print('Exporting the model to ONNX')
-    torch.onnx.export(
-        model, onnx_input_im, onnx_output_file, verbose=False, opset_version=args.opset, do_constant_folding=True,
-        input_names=['input'], output_names=['output'], dynamic_axes=dynamic_axes if args.dynamic else None
+    export_onnx_with_qat_support(
+        model, 
+        onnx_input_im, 
+        onnx_output_file, 
+        args.opset, 
+        dynamic_axes, 
+        is_qat
     )
 
     if args.simplify:
@@ -120,7 +189,10 @@ def main(args):
         model_onnx = onnxslim.slim(model_onnx)
         onnx.save(model_onnx, onnx_output_file)
 
-    print(f'Done: {onnx_output_file}\n')
+    print(f'Done: {onnx_output_file}')
+    print(f'Model Type: {"QAT" if is_qat else "Standard"}')
+    print(f'Head Type: {head}')
+    print(f'DeepStream Compatible: ✅\n')
 
 
 def parse_args():

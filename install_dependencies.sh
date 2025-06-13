@@ -2,23 +2,29 @@
 
 # Function to display usage message
 usage() {
-    echo "Usage: $0 [--no-trex]" 1>&2
+    echo "Usage: $0 [--no-trex] [--no-trt]" 1>&2
+    echo "Options:" 1>&2
+    echo "  --no-trex     Skip TREx installation" 1>&2
+    echo "  --no-trt      Skip TensorRT upgrade" 1>&2
     exit 1
 }
 
 # Set default flags
 install_trex=true  # TREx installation enabled by default
-install_base=true  # Base dependencies always installed by default
+upgrade_trt=true   # TensorRT upgrade enabled by default
 
 # Shared paths
-TENSORRT_REPO_PATH="/opt/nvidia/TensorRT"
-DOWNLOADS_PATH="/yolov9-qat/downloads"
+TENSORRT_REPO_PATH="./TensorRT"  # Changed from /opt/nvidia/TensorRT to local directory
+DOWNLOADS_PATH="./downloads"
 
-# Check command line options
-while [[ $# -gt 0 ]]; do
+# Parse command line arguments
+while [ "$#" -gt 0 ]; do
     case "$1" in
         --no-trex)
             install_trex=false
+            ;;
+        --no-trt)
+            upgrade_trt=false
             ;;
         *)
             usage
@@ -27,20 +33,82 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
+# Function to get Ubuntu version
+get_ubuntu_version() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        echo $VERSION_ID
+    else
+        echo "Unknown"
+    fi
+}
+
 # Function to install system dependencies
 install_system_dependencies() {
     echo "Installing system dependencies..."
-    apt-get update || return 1
-    apt-get install -y zip htop screen libgl1-mesa-glx libfreetype6-dev || return 1
+    local ubuntu_version=$(get_ubuntu_version)
+    echo "Detected Ubuntu version: $ubuntu_version"
+    
+    sudo apt-get update || return 1
+    
+    # Common packages for all versions
+    local common_packages="zip htop screen graphviz"
+    
+    # Version-specific packages
+    case $ubuntu_version in
+        "24.04")
+            echo "Installing packages for Ubuntu 24.04"
+            sudo apt-get install -y $common_packages libgl1 libfreetype-dev || return 1
+            ;;
+        "22.04"|"22.10")
+            echo "Installing packages for Ubuntu 22.04/22.10"
+            sudo apt-get install -y $common_packages libgl1-mesa-glx libfreetype6-dev || return 1
+            ;;
+        "20.04"|"20.10"|"21.04"|"21.10")
+            echo "Installing packages for Ubuntu 20.04-21.10"
+            sudo apt-get install -y $common_packages libgl1-mesa-glx libfreetype6-dev || return 1
+            ;;
+        *)
+            echo "Warning: Unknown Ubuntu version. Attempting to install common packages..."
+            sudo apt-get install -y $common_packages || return 1
+            ;;
+    esac
+    
     return 0
 }
 
 # Function to upgrade TensorRT
 upgrade_tensorrt() {
     echo "Upgrading TensorRT..."
-    local os="ubuntu2204"
+    local ubuntu_version=$(get_ubuntu_version)
+    echo "Detected Ubuntu version: $ubuntu_version"
+    
+    # Set TensorRT version
     local trt_version="10.9.0"
-    local cuda="cuda-12.8"
+    
+    # Set OS and CUDA version based on Ubuntu version
+    local os
+    local cuda
+    case $ubuntu_version in
+        "24.04")
+            os="ubuntu2404"
+            cuda="cuda-12.8"
+            ;;
+        "22.04"|"22.10")
+            os="ubuntu2204"
+            cuda="cuda-12.8"
+            ;;
+        "20.04"|"20.10"|"21.04"|"21.10")
+            os="ubuntu2004"
+            cuda="cuda-12.8"
+            ;;
+        *)
+            echo "Warning: Unknown Ubuntu version. Using Ubuntu 22.04 as default..."
+            os="ubuntu2204"
+            cuda="cuda-12.8"
+            ;;
+    esac
+    
     local tensorrt_package="nv-tensorrt-local-repo-${os}-${trt_version}-${cuda}_1.0-1_amd64.deb"
     local download_path="${DOWNLOADS_PATH}/${tensorrt_package}"
     
@@ -49,42 +117,21 @@ upgrade_tensorrt() {
     
     # Check if the package already exists
     if [ ! -f "$download_path" ]; then
-        echo "Downloading TensorRT package..."
+        echo "Downloading TensorRT package for ${os} with ${cuda}..."
         wget "https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/${trt_version}/local_repo/${tensorrt_package}" -O "$download_path" || return 1
     else
         echo "TensorRT package already exists at $download_path. Reusing existing file."
     fi
     
     # Install the package
-    dpkg -i "$download_path" || return 1
-    cp /var/nv-tensorrt-local-repo-${os}-${trt_version}-${cuda}/*keyring.gpg /usr/share/keyrings/ || return 1
-    apt-get update || return 1
-    apt-get install -y tensorrt || return 1
-    apt-get purge "nv-tensorrt-local-repo*" -y || return 1
+    sudo dpkg -i "$download_path" || return 1
+    sudo cp /var/nv-tensorrt-local-repo-${os}-${trt_version}-${cuda}/*keyring.gpg /usr/share/keyrings/ || return 1
+    sudo apt-get update || return 1
+    sudo apt-get install -y tensorrt || return 1
+    sudo apt-get purge "nv-tensorrt-local-repo*" -y || return 1
     
     # Keep the downloaded file for potential reuse
     echo "TensorRT package kept at $download_path for future use"
-    return 0
-}
-
-# Function to install Python packages
-install_python_packages() {
-    echo "Installing Python packages..."
-    pip install --upgrade pip || return 1
-    pip install --upgrade tensorrt==10.9.0.34 || return 1
-    
-    pip install seaborn \
-                thop \
-                "markdown-it-py>=2.2.0" \
-                "onnx-simplifier>=0.4.35" \
-                "onnxsim>=0.4.35" \
-                "onnxruntime>=1.16.3" \
-                "ujson>=5.9.0" \
-                "pycocotools>=2.0.7" \
-                "pycuda>=2025.1" || return 1
-    
-    pip install --upgrade onnx_graphsurgeon --extra-index-url https://pypi.ngc.nvidia.com || return 1
-    pip install pillow==9.5.0 --no-cache-dir --force-reinstall || return 1
     return 0
 }
 
@@ -114,6 +161,7 @@ install_pytorch_quantization() {
     cd "$TENSORRT_REPO_PATH/tools/pytorch-quantization" || return 1
     
     # Install requirements and setup
+    pip install setuptools || return 1
     pip install -r requirements.txt || return 1
     python setup.py install || return 1
     
@@ -126,12 +174,12 @@ install_trex_environment() {
     echo "Installing NVIDIA TREx environment..."
     # Check if TREx is not already installed
     if [ ! -d "/opt/nvidia_trex/env_trex" ]; then
-        apt-get install -y graphviz || return 1
+        sudo apt-get install -y graphviz || return 1
         pip install virtualenv "widgetsnbextension>=4.0.9" || return 1
         
-        mkdir -p /opt/nvidia_trex || return 1
+        sudo mkdir -p /opt/nvidia_trex || return 1
         cd /opt/nvidia_trex/ || return 1
-        python3 -m virtualenv env_trex || return 1
+        sudo python3 -m virtualenv env_trex || return 1
         source env_trex/bin/activate || return 1
         pip install "Werkzeug>=2.2.2" "graphviz>=0.20.1" || return 1
         
@@ -152,17 +200,20 @@ install_trex_environment() {
 # Function to cleanup
 cleanup() {
     echo "Cleaning up..."
-    apt-get clean
-    rm -rf /var/lib/apt/lists/*
+    sudo apt-get clean
+    sudo rm -rf /var/lib/apt/lists/*
 }
 
 # Main installation process
 main() {
-    # Install base dependencies (always)
-    if $install_base; then
-        install_system_dependencies || { echo "Failed to install system dependencies"; exit 1; }
+    # Install system dependencies
+    install_system_dependencies || { echo "Failed to install system dependencies"; exit 1; }
+    
+    # Upgrade TensorRT unless --no-trt flag is provided
+    if $upgrade_trt; then
         upgrade_tensorrt || { echo "Failed to upgrade TensorRT"; exit 1; }
-        install_python_packages || { echo "Failed to install Python packages"; exit 1; }
+    else
+        echo "Skipping TensorRT upgrade as requested"
     fi
 
     # Clone TensorRT repository once

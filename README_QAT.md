@@ -199,17 +199,6 @@ cd /yolov9-qat
 ./install_dependencies.sh 
 ```
 
-**Alternative Installation:**
-You can also install the required dependencies using the requirements file:
-```bash
-pip install -r requirements.txt
-```
-
-**Note**: For DeepStream export functionality, ensure you have the following packages installed:
-- `onnx>=1.9.0`
-- `onnx-simplifier>=0.4.1` or `onnxslim` (for model optimization)
-- `onnx-graphsurgeon>=0.3.12` (for Q/DQ layer removal)
-- `pytorch-quantization>=2.1.2` (for QAT support)
 
 3. Download dataset and pretrained model
 ```bash
@@ -332,50 +321,40 @@ python3 export_qat.py  --weights runs/qat/yolov9_qat/weights/qat_best_yolov9-c.p
 ```
 
 ## Export ONNX Model for DeepStream
+For DeepStream deployment, use the specialized `export_yoloV9.py` script which automatically detects QAT models and adds DeepStream-compatible output layers:
 
-The DeepStream export creates ONNX models specifically compatible with NVIDIA DeepStream SDK. This format includes basic post-processing layers that make the model ready for direct deployment in DeepStream applications.
-
-### Basic DeepStream Export
 ```bash
-python3 export_qat.py --weights runs/qat/yolov9_qat/weights/qat_best_yolov9-c.pt --include deepstream
+# Basic export with default settings
+python3 export_yoloV9.py --weights runs/qat/yolov9_qat/weights/qat_best_yolov9-c.pt --simplify
+
+# Export with custom image size and dynamic batch support
+python3 export_yoloV9.py --weights runs/qat/yolov9_qat/weights/qat_best_yolov9-c.pt --size 640 --dynamic --simplify
+
+# Export with specific batch size
+python3 export_yoloV9.py --weights runs/qat/yolov9_qat/weights/qat_best_yolov9-c.pt --batch 4 --size 640 640
 ```
 
-### Advanced DeepStream Export
-```bash
-python3 export_qat.py --weights runs/qat/yolov9_qat/weights/qat_best_yolov9-c.pt --include deepstream --dynamic --simplify --opset 17 --device cuda:0
-```
+### Export Arguments for DeepStream
 
-### Multiple Format Export
-You can export to multiple formats simultaneously:
-```bash
-# Export to both standard ONNX and DeepStream ONNX
-python3 export_qat.py --weights runs/qat/yolov9_qat/weights/qat_best_yolov9-c.pt --include onnx deepstream
+- `--weights`: Path to the model weights (.pt) file (required)
+- `--size`: Inference size [H,W] (default: [640])
+- `--opset`: ONNX opset version (default: 17)
+- `--simplify`: Simplify the ONNX model using onnxslim
+- `--dynamic`: Enable dynamic batch-size support
+- `--batch`: Static batch-size (default: 1, cannot be used with --dynamic)
 
-# Export to multiple formats
-python3 export_qat.py --weights runs/qat/yolov9_qat/weights/qat_best_yolov9-c.pt --include torchscript onnx deepstream engine
-```
+**Features:**
+- ✅ **Automatic QAT Detection**: Automatically detects and handles QAT models
+- ✅ **DeepStream Compatible**: Adds appropriate output layers for DeepStream deployment
+- ✅ **Labels Generation**: Creates `labels.txt` file automatically
+- ✅ **Dual Head Support**: Supports both single and dual detection heads
+- ✅ **Quantization-Aware Export**: Uses proper quantization export for QAT models
 
-### DeepStream Export Features
+**Output:**
+- ONNX model file: `{weights_path}.onnx`
+- Labels file: `labels.txt`
+- Console output showing model type (QAT/Standard) and head type
 
-- **QAT Support**: Automatically detects and properly handles quantized models
-- **Basic Post-processing**: Adds transpose and max score extraction layers
-- **DeepStream Ready**: Output format compatible with DeepStream parsing
-- **Q/DQ Optimization**: Removes redundant quantization layers for better performance
-
-### Output Format
-
-The DeepStream-compatible model outputs:
-- **Input**: `input` - Shape: [batch, 3, height, width]
-- **Output**: `output` - Shape: [batch, num_detections, 6]
-  - Format: [x1, y1, x2, y2, confidence, class_id]
-  - Contains ALL detections (no NMS or confidence filtering applied)
-  - Confidence is the maximum class score for each detection
-
-**Note**: The DeepStream export adds basic post-processing (transpose and max score extraction) but does NOT include NMS or confidence filtering. You'll need to configure these in your DeepStream pipeline.
-
-### Available Export Formats
-
-Available formats: `torchscript`, `onnx`, `onnx_end2end`, `deepstream`, `openvino`, `engine`, `coreml`, `saved_model`, `pb`, `tflite`, `edgetpu`, `tfjs`, `paddle`
 
 ## Deployment with Tensorrt
 ```bash

@@ -1,0 +1,67 @@
+name: yolov9-qat
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.10
+  - pip
+  
+  # PyTorch with CUDA support
+  - pytorch>=1.7.0
+  - torchvision>=0.8.1
+  - torchaudio
+  - pytorch-cuda=12.1  # or 11.8 if you have older drivers
+  
+  # Scientific computing
+  - numpy>=1.18.5
+  - scipy>=1.4.1
+  - matplotlib>=3.2.2
+  - seaborn>=0.13.0
+  - pandas>=1.1.4
+  
+  # Computer vision
+  - opencv
+  - pillow>=7.1.2
+  
+  # Utilities
+  - pyyaml>=5.3.1
+  - tqdm>=4.64.0
+  - requests>=2.23.0
+  - psutil
+  - ipython
+  - gitpython
+  
+  # Development tools
+  - jupyter
+  - notebook
+  
+  # System tools (if available via conda)
+  - graphviz
+  
+  # Pip dependencies (packages not available via conda)
+  - pip:
+    # Core ML/Vision packages
+    - thop>=0.1.1
+    - pycocotools>=2.0
+    - albumentations>=1.0.3
+    - roboflow
+    
+    # Export dependencies
+    - coremltools>=6.0
+    - onnx>=1.9.0
+    - onnx-simplifier>=0.4.35
+    - onnxsim>=0.4.35
+    - onnxslim
+    - onnxruntime>=1.16.3
+    - onnx-graphsurgeon>=0.3.12
+    - markdown-it-py>=2.2.0
+    - ujson>=5.9.0
+    - pycuda>=2025.1
+    
+    # TensorRT (will be installed separately via script)
+    # tensorrt==10.9.0.34
+    
+    # Note: pytorch-quantization requires manual installation via install_dependencies.sh 
