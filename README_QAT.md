@@ -307,85 +307,217 @@ python3 qat.py quantize --weights yolov9-c-converted.pt --name yolov9_qat
 
 ## Usage
 
-## Quantize Model
+## Quantize Model (QAT Training)
 
-To quantize a YOLOv9 model, run:
+The `qat.py` script provides three main commands: `quantize`, `sensitive`, and `eval`. Here's how to use each command properly:
+
+### QAT Quantization Training
 
 ```bash
-python3 qat.py quantize --weights yolov9-c-converted.pt  --name yolov9_qat --exist-ok
+# Basic QAT training with reparameterized model
+python3 qat.py quantize \
+    --weights yolov9-c-converted.pt \
+    --data data/coco.yaml \
+    --hyp data/hyps/hyp.scratch-high.yaml \
+    --device cuda:0 \
+    --batch-size 16 \
+    --imgsz 640 \
+    --project runs/qat \
+    --name yolov9_qat \
+    --exist-ok \
+    --iters 200 \
+    --seed 57 \
+    --supervision-stride 1
 
-python qat.py quantize --weights <weights_path> --data <data_path> --hyp <hyp_path> ...
+# Advanced QAT training with custom settings
+python3 qat.py quantize \
+    --weights runs/train/exp/weights/best-converted.pt \
+    --data custom_dataset.yaml \
+    --hyp data/hyps/hyp.scratch-high.yaml \
+    --device cuda:0 \
+    --batch-size 32 \
+    --imgsz 640 \
+    --project runs/qat \
+    --name custom_qat_experiment \
+    --exist-ok \
+    --iters 300 \
+    --supervision-stride 2 \
+    --no-eval-origin \
+    --no-eval-ptq
 ```
-## Quantize Command Arguments
 
-### Description
-This command is used to perform PTQ/QAT finetuning.
+### Quantize Command Arguments
 
-### Arguments
+**Required Arguments:**
+- `--weights`: Path to **reparameterized** model weights (.pt file)
 
-- `--weights`: Path to the model weights (.pt). Default: ROOT/runs/models_original/yolov9-c.pt.
-- `--data`: Path to the dataset configuration file (data.yaml). Default: ROOT/data/coco.yaml.
-- `--hyp`: Path to the hyperparameters file (hyp.yaml). Default: ROOT/data/hyps/hyp.scratch-high.yaml.
-- `--device`: Device to use for training/evaluation (e.g., "cuda:0"). Default: "cuda:0".
-- `--batch-size`: Total batch size for training/evaluation. Default: 10.
-- `--imgsz`, `--img`, `--img-size`: Train/val image size (pixels). Default: 640.
-- `--project`: Directory to save the training/evaluation outputs. Default: ROOT/runs/qat.
-- `--name`: Name of the training/evaluation experiment. Default: 'exp'.
-- `--exist-ok`: Flag to indicate if existing project/name should be overwritten.
-- `--iters`: Iterations per epoch. Default: 200.
-- `--seed`: Global training seed. Default: 57.
-- `--supervision-stride`: Supervision stride. Default: 1.
-- `--no-eval-origin`: Disable eval for origin model.
-- `--no-eval-ptq`: Disable eval for ptq model.
+**Dataset & Training:**
+- `--data`: Dataset configuration file (data.yaml) - Default: `data/coco.yaml`
+- `--hyp`: Hyperparameters file (hyp.yaml) - Default: `data/hyps/hyp.scratch-high.yaml`
+- `--batch-size`: Total batch size for training/evaluation - Default: `10`
+- `--imgsz`, `--img`, `--img-size`: Train/val image size (pixels) - Default: `640`
+- `--iters`: Iterations per epoch for QAT fine-tuning - Default: `200`
+
+**Hardware & Performance:**
+- `--device`: Device to use (e.g., "cuda:0", "cpu") - Default: `"cuda:0"`
+- `--seed`: Global training seed for reproducibility - Default: `57`
+
+**Output & Logging:**
+- `--project`: Directory to save outputs - Default: `runs/qat`
+- `--name`: Experiment name - Default: `'exp'`
+- `--exist-ok`: Allow overwriting existing project/name
+
+**Advanced Options:**
+- `--supervision-stride`: Supervision stride for layer supervision - Default: `1`
+- `--no-eval-origin`: Disable evaluation of original (non-quantized) model
+- `--no-eval-ptq`: Disable evaluation of PTQ (Post-Training Quantization) model
+
+### QAT Training Process
+
+The QAT training process includes:
+
+1. **Model Loading**: Loads the reparameterized model
+2. **Quantization Setup**: Applies quantization modules to the model
+3. **Calibration**: Calibrates quantization parameters using training data
+4. **Evaluation Steps**:
+   - **Origin Model**: Evaluates original FP32 model (if `--no-eval-origin` not set)
+   - **PTQ Model**: Evaluates Post-Training Quantization model (if `--no-eval-ptq` not set)
+5. **QAT Fine-tuning**: Performs quantization-aware training
+6. **Model Saving**: Saves models at each epoch and best model
+
+### Output Files
+
+QAT training generates several output files in `{project}/{name}/weights/`:
+
+- `ptq_ap_{score}_{original_name}.pt`: PTQ model
+- `qat_ep_{epoch}_ap_{score}_{original_name}.pt`: QAT model for each epoch
+- `qat_best_{original_name}.pt`: Best QAT model (highest mAP)
+- `report.json`: Training report with evaluation metrics
 
 
 ## Sensitive Layer Analysis
+
+Sensitive layer analysis helps identify which layers are most sensitive to quantization, allowing you to optimize your QAT strategy.
+
+### Usage Examples
+
 ```bash
-python qat.py sensitive --weights yolov9-c.pt --data data/coco.yaml --hyp hyp.scratch-high.yaml ...
+# Basic sensitive analysis
+python3 qat.py sensitive \
+    --weights yolov9-c.pt \
+    --data data/coco.yaml \
+    --hyp data/hyps/hyp.scratch-high.yaml \
+    --device cuda:0 \
+    --batch-size 16 \
+    --imgsz 640 \
+    --project runs/qat_sensitive \
+    --name yolov9_analysis \
+    --exist-ok
+
+# Advanced sensitive analysis with limited images
+python3 qat.py sensitive \
+    --weights runs/train/exp/weights/best.pt \
+    --data custom_dataset.yaml \
+    --hyp data/hyps/hyp.scratch-high.yaml \
+    --device cuda:0 \
+    --batch-size 32 \
+    --imgsz 640 \
+    --project runs/qat_sensitive \
+    --name custom_analysis \
+    --exist-ok \
+    --num-image 1000
 ```
 
-## Sensitive Command Arguments
+### Sensitive Command Arguments
 
-### Description
-This command is used for sensitive layer analysis.
+**Required Arguments:**
+- `--weights`: Path to **original** (non-quantized) model weights (.pt)
 
-### Arguments
+**Dataset & Evaluation:**
+- `--data`: Dataset configuration file (data.yaml) - Default: `data/coco.yaml`
+- `--hyp`: Hyperparameters file (hyp.yaml) - Default: `data/hyps/hyp.scratch-high.yaml`
+- `--batch-size`: Total batch size for evaluation - Default: `10`
+- `--imgsz`, `--img`, `--img-size`: Validation image size (pixels) - Default: `640`
+- `--num-image`: Number of images to evaluate (None = all images) - Default: `None`
 
-- `--weights`: Path to the model weights (.pt). Default: ROOT/runs/models_original/yolov9-c.pt.
-- `--device`: Device to use for training/evaluation (e.g., "cuda:0"). Default: "cuda:0".
-- `--data`: Path to the dataset configuration file (data.yaml). Default: data/coco.yaml.
-- `--batch-size`: Total batch size for training/evaluation. Default: 10.
-- `--imgsz`, `--img`, `--img-size`: Train/val image size (pixels). Default: 640.
-- `--hyp`: Path to the hyperparameters file (hyp.yaml). Default: data/hyps/hyp.scratch-high.yaml.
-- `--project`: Directory to save the training/evaluation outputs. Default: ROOT/runs/qat_sentive.
-- `--name`: Name of the training/evaluation experiment. Default: 'exp'.
-- `--exist-ok`: Flag to indicate if existing project/name should be overwritten.
-- `--num-image`: Number of images to evaluate. Default: None.
+**Hardware & Output:**
+- `--device`: Device to use (e.g., "cuda:0", "cpu") - Default: `"cuda:0"`
+- `--project`: Directory to save outputs - Default: `runs/qat_sensitive`
+- `--name`: Experiment name - Default: `'exp'`
+- `--exist-ok`: Allow overwriting existing project/name
+
+### Analysis Process
+
+1. **Model Preparation**: Loads original model and applies quantization modules
+2. **Baseline Evaluation**: Evaluates PTQ model with all layers quantized
+3. **Layer-by-Layer Analysis**: Disables quantization for each layer individually and evaluates
+4. **Results Ranking**: Ranks layers by their sensitivity to quantization
+
+### Output Files
+
+- `summary-sensitive-analysis.json`: Complete analysis results
+- Console output showing top 10 most sensitive layers
+
+**Important Notes:**
+- ⚠️ **Use Original Models**: Only non-quantized models are supported
+- 🔍 **Analysis Purpose**: Helps identify layers that benefit most from FP16 precision
+- 📊 **Results Interpretation**: Higher mAP when layer is FP16 = more sensitive layer
 
 
 ## Evaluate QAT Model
 
-### Evaluate using Pytorch 
+### Evaluate using PyTorch
+
+Evaluate your quantized models to verify their performance before deployment.
+
 ```bash
-python3 qat.py eval --weights runs/qat/yolov9_qat/weights/qat_best_yolov9-c-converted.pt  --name eval_qat_yolov9
+# Basic QAT model evaluation
+python3 qat.py eval \
+    --weights runs/qat/yolov9_qat/weights/qat_best_yolov9-c-converted.pt \
+    --data data/coco.yaml \
+    --device cuda:0 \
+    --batch-size 16 \
+    --imgsz 640 \
+    --project runs/qat_eval \
+    --name eval_qat_yolov9 \
+    --exist-ok
+
+# Advanced evaluation with custom thresholds
+python3 qat.py eval \
+    --weights runs/qat/custom_experiment/weights/qat_best_model.pt \
+    --data custom_dataset.yaml \
+    --device cuda:0 \
+    --batch-size 32 \
+    --imgsz 640 \
+    --conf-thres 0.25 \
+    --iou-thres 0.45 \
+    --project runs/qat_eval \
+    --name custom_eval \
+    --exist-ok
 ```
-## Evaluation Command Arguments
 
-### Description
-This command is used to perform evaluation on QAT Models.
+### Evaluation Command Arguments
 
-### Arguments
+**Required Arguments:**
+- `--weights`: Path to **quantized** model weights (.pt file)
 
-- `--weights`: Path to the model weights (.pt). Default: ROOT/runs/models_original/yolov9-c.pt.
-- `--data`: Path to the dataset configuration file (data.yaml). Default: data/coco.yaml.
-- `--batch-size`: Total batch size for evaluation. Default: 10.
-- `--imgsz`, `--img`, `--img-size`: Validation image size (pixels). Default: 640.
-- `--device`: Device to use for evaluation (e.g., "cuda:0"). Default: "cuda:0".
-- `--conf-thres`: Confidence threshold for evaluation. Default: 0.001.
-- `--iou-thres`: NMS threshold for evaluation. Default: 0.7.
-- `--project`: Directory to save the evaluation outputs. Default: ROOT/runs/qat_eval.
-- `--name`: Name of the evaluation experiment. Default: 'exp'.
-- `--exist-ok`: Flag to indicate if existing project/name should be overwritten.
+**Dataset & Evaluation:**
+- `--data`: Dataset configuration file (data.yaml) - Default: `data/coco.yaml`
+- `--batch-size`: Total batch size for evaluation - Default: `10`
+- `--imgsz`, `--img`, `--img-size`: Validation image size (pixels) - Default: `640`
+- `--conf-thres`: Confidence threshold for detection - Default: `0.001`
+- `--iou-thres`: IoU threshold for NMS - Default: `0.7`
+
+**Hardware & Output:**
+- `--device`: Device to use (e.g., "cuda:0", "cpu") - Default: `"cuda:0"`
+- `--project`: Directory to save evaluation outputs - Default: `runs/qat_eval`
+- `--name`: Evaluation experiment name - Default: `'exp'`
+- `--exist-ok`: Allow overwriting existing project/name
+
+**Important Notes:**
+- ✅ **QAT Models Only**: Only quantized models are supported for evaluation
+- 📊 **Metrics Reported**: AP, AP50, Precision, Recall
+- 💾 **Results Saved**: Evaluation results saved in specified project directory
 
 ### Evaluate using TensorRT
 
