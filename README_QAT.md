@@ -131,7 +131,7 @@ In this section, we'll outline the steps to perform Quantization-Aware Training 
    - Utilize the original implementation train.py to train your YOLOv9 model with your dataset and desired configurations.
    - Follow the training instructions provided in the original YOLOv9 repository to ensure proper training.
 
-2. **Reparameterize the Model [reparameterization.py](https://github.com/sunmooncode/yolov9/blob/main/tools/reparameterization.py):**
+2. **[Reparameterize the Model](#reparameterize-model):**
    - After completing the training, reparameterize the trained model to prepare it for quantization. This step is crucial for ensuring that the model's weights are in a suitable format for quantization.
 
 3. **[Proceed with Quantization](#quantize-model):**
@@ -205,6 +205,103 @@ cd /yolov9-qat
 $ cd /yolov9
 $ bash scripts/get_coco.sh
 $ wget https://github.com/WongKinYiu/yolov9/releases/download/v0.1/yolov9-c-converted.pt
+```
+
+## Reparameterize Model
+
+After training your YOLOv9 model using the original implementation, you need to reparameterize it before proceeding with quantization. This step converts the trained model into a format suitable for QAT.
+
+### Usage Examples
+
+```bash
+# Reparameterize YOLOv9-C model
+python3 reparameterization.py \
+    --cfg models/detect/gelan-c.yaml \
+    --weights runs/train/exp/weights/best.pt \
+    --model c \
+    --device cuda:0 \
+    --classes_num 80 \
+    --save yolov9-c-converted.pt
+
+# Reparameterize YOLOv9-S model
+python3 reparameterization.py \
+    --cfg models/detect/gelan-s.yaml \
+    --weights yolov9-s.pt \
+    --model s \
+    --device cuda:0 \
+    --classes_num 80 \
+    --save yolov9-s-converted.pt
+
+# Reparameterize YOLOv9-T model (uses same settings as YOLOv9-S)
+python3 reparameterization.py \
+    --cfg models/detect/gelan-t.yaml \
+    --weights yolov9-t.pt \
+    --model s \
+    --device cuda:0 \
+    --classes_num 80 \
+    --save yolov9-t-converted.pt
+
+# Reparameterize YOLOv9-M model
+python3 reparameterization.py \
+    --cfg models/detect/gelan-m.yaml \
+    --weights yolov9-m.pt \
+    --model m \
+    --device cuda:0 \
+    --classes_num 80 \
+    --save yolov9-m-converted.pt
+
+# Reparameterize YOLOv9-E model
+python3 reparameterization.py \
+    --cfg models/detect/gelan-e.yaml \
+    --weights yolov9-e.pt \
+    --model e \
+    --device cuda:0 \
+    --classes_num 80 \
+    --save yolov9-e-converted.pt
+```
+
+### Reparameterization Arguments
+
+- `--cfg`: Path to model configuration file (default: `../models/detect/gelan-c.yaml`)
+- `--model`: Model type to convert - **Required**
+  - `s`: YOLOv9-S
+  - `m`: YOLOv9-M  
+  - `c`: YOLOv9-C
+  - `e`: YOLOv9-E
+- `--weights`: Path to trained model weights (.pt file) - **Required**
+- `--device`: Device to use (default: `cpu`)
+- `--classes_num`: Number of classes in your dataset (default: `80`)
+- `--save`: Output path for reparameterized model (default: `./yolov9-c-converted.pt`)
+
+### Model Type Selection Guide
+
+| Original Model | --model flag | Description |
+|----------------|--------------|-------------|
+| YOLOv9-T | `s` | Tiny model variant (uses same reparameterization as YOLOv9-S) |
+| YOLOv9-S | `s` | Small model variant |
+| YOLOv9-M | `m` | Medium model variant |
+| YOLOv9-C | `c` | Compact model variant (most common) |
+| YOLOv9-E | `e` | Efficient model variant |
+
+### Important Notes
+
+- ⚠️ **Model Type Must Match**: Ensure the `--model` flag matches your trained model architecture
+- ✅ **Required Step**: Reparameterization is mandatory before QAT - you cannot skip this step
+- 📁 **File Output**: The script will create a new `.pt` file with reparameterized weights
+- 🔄 **Weight Mapping**: The script handles complex weight mapping between training and inference architectures
+- 💾 **Model Format**: Output model is saved in half precision (FP16) format
+
+### Example Workflow
+
+```bash
+# 1. Train your model (using original YOLOv9 repository)
+python train.py --data coco.yaml --cfg models/detect/gelan-c.yaml --weights '' --batch-size 16
+
+# 2. Reparameterize the trained model
+python3 reparameterization.py --weights runs/train/exp/weights/best.pt --model c --save yolov9-c-converted.pt
+
+# 3. Proceed with QAT (next section)
+python3 qat.py quantize --weights yolov9-c-converted.pt --name yolov9_qat
 ```
 
 
