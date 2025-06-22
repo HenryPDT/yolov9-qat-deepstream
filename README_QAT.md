@@ -232,11 +232,11 @@ python3 reparameterization.py \
     --classes_num 80 \
     --save yolov9-s-converted.pt
 
-# Reparameterize YOLOv9-T model (uses same settings as YOLOv9-S)
+# Reparameterize YOLOv9-T model
 python3 reparameterization.py \
     --cfg models/detect/gelan-t.yaml \
     --weights yolov9-t.pt \
-    --model s \
+    --model t \
     --device cuda:0 \
     --classes_num 80 \
     --save yolov9-t-converted.pt
@@ -264,6 +264,7 @@ python3 reparameterization.py \
 
 - `--cfg`: Path to model configuration file (default: `../models/detect/gelan-c.yaml`)
 - `--model`: Model type to convert - **Required**
+  - `t`: YOLOv9-T
   - `s`: YOLOv9-S
   - `m`: YOLOv9-M  
   - `c`: YOLOv9-C
@@ -277,7 +278,7 @@ python3 reparameterization.py \
 
 | Original Model | --model flag | Description |
 |----------------|--------------|-------------|
-| YOLOv9-T | `s` | Tiny model variant (uses same reparameterization as YOLOv9-S) |
+| YOLOv9-T | `t` | Tiny model variant |
 | YOLOv9-S | `s` | Small model variant |
 | YOLOv9-M | `m` | Medium model variant |
 | YOLOv9-C | `c` | Compact model variant (most common) |
@@ -285,11 +286,11 @@ python3 reparameterization.py \
 
 ### Important Notes
 
-- ⚠️ **Model Type Must Match**: Ensure the `--model` flag matches your trained model architecture
-- ✅ **Required Step**: Reparameterization is mandatory before QAT - you cannot skip this step
-- 📁 **File Output**: The script will create a new `.pt` file with reparameterized weights
-- 🔄 **Weight Mapping**: The script handles complex weight mapping between training and inference architectures
-- 💾 **Model Format**: Output model is saved in half precision (FP16) format
+- **Model Type Must Match**: Ensure the `--model` flag matches your trained model architecture.
+- **Required Step**: Reparameterization is mandatory before QAT - you cannot skip this step
+- **File Output**: The script will create a new `.pt` file with reparameterized weights
+- **Weight Mapping**: The script handles complex weight mapping between training and inference architectures
+- **Model Format**: Output model is saved in half precision (FP16) format
 
 ### Example Workflow
 
@@ -459,9 +460,9 @@ python3 qat.py sensitive \
 - Console output showing top 10 most sensitive layers
 
 **Important Notes:**
-- ⚠️ **Use Original Models**: Only non-quantized models are supported
-- 🔍 **Analysis Purpose**: Helps identify layers that benefit most from FP16 precision
-- 📊 **Results Interpretation**: Higher mAP when layer is FP16 = more sensitive layer
+- **Use Original Models**: Only non-quantized models are supported
+- **Analysis Purpose**: Helps identify layers that benefit most from FP16 precision
+- **Results Interpretation**: Higher mAP when layer is FP16 = more sensitive layer
 
 
 ## Evaluate QAT Model
@@ -515,9 +516,9 @@ python3 qat.py eval \
 - `--exist-ok`: Allow overwriting existing project/name
 
 **Important Notes:**
-- ✅ **QAT Models Only**: Only quantized models are supported for evaluation
-- 📊 **Metrics Reported**: AP, AP50, Precision, Recall
-- 💾 **Results Saved**: Evaluation results saved in specified project directory
+- **QAT Models Only**: Only quantized models are supported for evaluation
+- **Metrics Reported**: AP, AP50, Precision, Recall
+- **Results Saved**: Evaluation results saved in specified project directory
 
 ### Evaluate using TensorRT
 
@@ -573,11 +574,11 @@ python3 export_yoloV9.py --weights runs/qat/yolov9_qat/weights/qat_best_yolov9-c
 - `--batch`: Static batch-size (default: 1, cannot be used with --dynamic)
 
 **Features:**
-- ✅ **Automatic QAT Detection**: Automatically detects and handles QAT models
-- ✅ **DeepStream Compatible**: Adds appropriate output layers for DeepStream deployment
-- ✅ **Labels Generation**: Creates `labels.txt` file automatically
-- ✅ **Dual Head Support**: Supports both single and dual detection heads
-- ✅ **Quantization-Aware Export**: Uses proper quantization export for QAT models
+- **Automatic QAT Detection**: Automatically detects and handles QAT models
+- **DeepStream Compatible**: Adds appropriate output layers for DeepStream deployment
+- **Labels Generation**: Creates `labels.txt` file automatically
+- **Dual Head Support**: Supports both single and dual detection heads
+- **Quantization-Aware Export**: Uses proper quantization export for QAT models
 
 **Output:**
 - ONNX model file: `{weights_path}.onnx`

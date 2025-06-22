@@ -163,10 +163,13 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', type=str, default='../models/detect/gelan-c.yaml', help='model.yaml path')
-    parser.add_argument('--model', type=str, default='c', help='convert model type (s, m, c, or e)')
+    parser.add_argument('--model', type=str, default='c', help='convert model type (t, s, m, c, e)')
     parser.add_argument('--weights', type=str, default='./yolov9-c.pt', help='weights path')
     parser.add_argument('--device', default='cpu', help='device id (i.e. 0 or 0,1) or cpu')
     parser.add_argument('--classes_num', default=80, type=int, help='number of classes')
     parser.add_argument('--save', default='./yolov9-c-converted.pt', type=str, help='save path')
     args = parser.parse_args()
+    # Treat model 't' as 's' for all logic
+    if args.model == 't':
+        args.model = 's'
     main(args)
